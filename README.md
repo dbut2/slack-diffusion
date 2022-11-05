@@ -2,11 +2,21 @@
 
 Slack bot for generating images using [Stable Diffusion](https://stability.ai/blog/stable-diffusion-public-release)
 
+## Usage
+
+```sh
+$ docker build -t diffusion-slack .
+
+$ docker run --rm --gpus=all \
+  -v huggingface:/home/huggingface/.cache/huggingface \
+  -v ~/.config/gcloud:/home/huggingface/.config/gcloud \
+  --env-file docker.envs \
+  diffusion
+```
+
 ### WIP
 
-![dylan hacking a slack diffusion bot together](images/dylan_hacking_a_slack_diffusion_bot_together.png)
-
-"dylan hacking a slack diffusion bot together"
+![dylan hacking a slack diffusion bot together](example.png)
 
 ### Based on works by
 
