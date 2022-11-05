@@ -62,6 +62,8 @@ func init() {
 }
 
 func requestFunc(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+
 	verifier, err := slack.NewSecretsVerifier(r.Header, slackSigningSecret)
 	if handleErr(err, w) {
 		return
@@ -143,14 +145,11 @@ func requestFunc(w http.ResponseWriter, r *http.Request) {
 		handleErr(fmt.Errorf("unknown command: %s", s.Command), w)
 		return
 	}
-
-	w.WriteHeader(http.StatusOK)
 }
 
 func handleErr(err error, w http.ResponseWriter) bool {
 	if err != nil {
 		log.Print(err.Error())
-		w.WriteHeader(http.StatusOK)
 		_, err = w.Write([]byte("Oh no! Something went wrong, give <@UU3TUL99S> a shout, hopefully he can get it fixed for you!"))
 		if err != nil {
 			log.Print(err.Error())

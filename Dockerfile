@@ -7,9 +7,9 @@ COPY ./go.mod ./go.mod
 COPY ./go.sum ./go.sum
 COPY ./proto/pkg ./proto/pkg
 
-COPY main.go ./main.go
+COPY ./diffusion.go ./diffusion.go
 
-RUN go build -o diffusion main.go
+RUN go build -o diffusion diffusion.go
 
 FROM tensorflow/tensorflow:2.10.0-gpu
 
@@ -32,7 +32,6 @@ RUN mkdir -p /home/huggingface/.cache/huggingface \
   && mkdir -p /home/huggingface/output
 
 COPY diffusion.py ./
-COPY token.txt /home/huggingface
 
 COPY --from=builder /app/diffusion ./
 

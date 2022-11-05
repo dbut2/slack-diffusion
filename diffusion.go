@@ -17,6 +17,7 @@ import (
 )
 
 var (
+	huggingfaceToken   = os.Getenv("HUGGINGFACE_TOKEN")
 	projectID          = os.Getenv("PROJECT_ID")
 	pubsubSubscription = os.Getenv("PUBSUB_SUBSCRIPTION")
 	storageBucket      = os.Getenv("STORAGE_BUCKET")
@@ -78,6 +79,7 @@ func main() {
 	}()
 
 	sub := psc.Subscription(pubsubSubscription)
+	log.Print("listening...\n")
 	err := sub.Receive(context.Background(), func(ctx context.Context, msg *pubsub.Message) {
 		id := uuid.New()
 
@@ -105,7 +107,7 @@ func main() {
 func createImage(req request) error {
 	fmt.Printf("%s generating image\n", req.id)
 
-	args := []string{"--uuid", req.id, "--W", imageWidth, "--H", imageHeight, "--prompt", req.GetPrompt()}
+	args := []string{"--token", huggingfaceToken, "--uuid", req.id, "--W", imageWidth, "--H", imageHeight, "--prompt", req.GetPrompt()}
 	cmd := exec.Command("./diffusion.py", args...)
 	err := cmd.Run()
 	if err != nil {
