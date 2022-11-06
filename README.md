@@ -16,7 +16,7 @@ $ docker run --rm --gpus=all \
 
 ### WIP
 
-![dylan hacking a slack diffusion bot together](example.png)
+![dylan hacking a slack diffusion bot together](example.jpg)
 
 ### Based on works by
 

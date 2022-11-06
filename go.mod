@@ -3,6 +3,7 @@ module github.com/dbut2/slack-diffusion
 go 1.19
 
 require (
+	cloud.google.com/go/datastore v1.9.0
 	cloud.google.com/go/pubsub v1.26.0
 	cloud.google.com/go/storage v1.27.0
 	github.com/GoogleCloudPlatform/functions-framework-go v1.6.1

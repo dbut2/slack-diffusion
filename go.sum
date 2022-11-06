@@ -36,6 +36,8 @@ cloud.google.com/go/compute v1.10.0 h1:aoLIYaA1fX3ywihqpBk2APQKOo20nXsp1GEZQbx5J
 cloud.google.com/go/compute v1.10.0/go.mod h1:ER5CLbMxl90o2jtNbGSbtfOpQKR0t15FOtRsugnLrlU=
 cloud.google.com/go/datastore v1.0.0/go.mod h1:LXYbyblFSglQ5pkeyhO+Qmw7ukd3C+pD7TKLgZqpHYE=
 cloud.google.com/go/datastore v1.1.0/go.mod h1:umbIZjpQpHh4hmRpGhH4tLFup+FVzqBi1b3c64qFpCk=
+cloud.google.com/go/datastore v1.9.0 h1:s3Gy1QRIwKxcMCCwJJq/4c64VjROZu6tq1DC632hZuo=
+cloud.google.com/go/datastore v1.9.0/go.mod h1:yKk5PbPPCtuObGXNWvpQGEyWe+kiMQlTnpMjtltPNTc=
 cloud.google.com/go/functions v1.0.0/go.mod h1:O9KS8UweFVo6GbbbCBKh5yEzbW08PVkg2spe3RfPMd4=
 cloud.google.com/go/iam v0.5.0 h1:fz9X5zyTWBmamZsqvqZqD7khbifcZF/q+Z1J8pfhIUg=
 cloud.google.com/go/iam v0.5.0/go.mod h1:wPU9Vt0P4UmCux7mqtRu6jcpPAb74cP1fh50J3QpkUc=
