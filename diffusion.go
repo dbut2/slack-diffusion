@@ -66,14 +66,12 @@ func main() {
 		for {
 			req := <-reqs
 			err := createImage(req)
-			if err != nil {
-				log.Print(err.Error())
+			if handleError(err, req.GetChannelId(), req.GetTimestamp()) {
+				continue
 			}
 			go func() {
 				err = processImage(req)
-				if err != nil {
-					log.Print(err.Error())
-				}
+				handleError(err, req.GetChannelId(), req.GetTimestamp())
 			}()
 		}
 	}()
@@ -92,7 +90,7 @@ func main() {
 
 		msg.Ack()
 
-		fmt.Printf("%s msg received: %s\n", id, req.GetPrompt())
+		fmt.Printf("%s msg received from %s: %s\n", id, getName(req.GetUserId()), req.GetPrompt())
 
 		reqs <- request{
 			id:      id.String(),
@@ -102,6 +100,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
+}
+
+func getName(userID string) string {
+	user, err := sc.GetUserInfo(userID)
+	if err != nil {
+		log.Print(err.Error())
+		return "(error)"
+	}
+	return fmt.Sprintf("%s (%s)", user.Name, user.RealName)
 }
 
 func createImage(req request) error {
@@ -150,6 +157,17 @@ func processImage(req request) error {
 		return err
 	}
 
+	_, err = obj.Update(context.Background(), storage.ObjectAttrsToUpdate{
+		Metadata: map[string]string{
+			"prompt": req.GetPrompt(),
+			"userId": req.GetUserId(),
+			"name":   getName(req.GetUserId()),
+		},
+	})
+	if err != nil {
+		return err
+	}
+
 	fmt.Printf("%s sending response\n", req.id)
 
 	imageUrl := fmt.Sprintf("https://storage.googleapis.com/%s/%s", obj.BucketName(), obj.ObjectName())
@@ -166,4 +184,34 @@ func processImage(req request) error {
 	}
 
 	return nil
+}
+
+var (
+	errResponse = "Oh no! Something went wrong, give <@UU3TUL99S> a shout, hopefully he can get it working for you!"
+)
+
+func updateMessageError(channel string, timestamp string) error {
+	opts := []slack.MsgOption{
+		slack.MsgOptionBlocks(
+			slack.NewSectionBlock(
+				slack.NewTextBlockObject("mrkdwn", errResponse, false, false),
+				nil, nil,
+			),
+		),
+	}
+
+	_, _, _, err := sc.UpdateMessage(channel, timestamp, opts...)
+	return err
+}
+
+func handleError(err error, channel string, timestamp string) bool {
+	if err != nil {
+		log.Print(err.Error())
+		err = updateMessageError(channel, timestamp)
+		if err != nil {
+			log.Print(err.Error())
+		}
+		return true
+	}
+	return false
 }

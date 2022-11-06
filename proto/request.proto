@@ -6,4 +6,5 @@ message Request {
   string prompt = 1;
   string channel_id = 2;
   string timestamp = 3;
+  string user_id = 4;
 }
