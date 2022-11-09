@@ -11,10 +11,11 @@ import (
 	"cloud.google.com/go/datastore"
 	"cloud.google.com/go/pubsub"
 	"cloud.google.com/go/storage"
-	"github.com/dbut2/slack-diffusion/proto/pkg"
 	"github.com/google/uuid"
 	"github.com/slack-go/slack"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/dbut2/slack-diffusion/proto/pkg"
 )
 
 var (
@@ -32,6 +33,7 @@ var (
 	gcsc *storage.Client
 )
 
+// init sets up clients in a non-blocking manner
 func init() {
 	var err error
 
@@ -122,6 +124,8 @@ type AuthedUser struct {
 	Token  string
 }
 
+// getSlackClient will return a slack client using the token for the user stored
+// in datastore
 func getSlackClient(userID string) (*slack.Client, error) {
 	user := new(AuthedUser)
 	key := datastore.NameKey("UserToken", userID, nil)
@@ -133,6 +137,7 @@ func getSlackClient(userID string) (*slack.Client, error) {
 	return client, nil
 }
 
+// getName will fetch the users name from slack
 func getName(sc *slack.Client, userID string) string {
 	user, err := sc.GetUserInfo(userID)
 	if err != nil {
@@ -142,6 +147,7 @@ func getName(sc *slack.Client, userID string) string {
 	return fmt.Sprintf("%s (%s)", user.Name, user.RealName)
 }
 
+// createImage executes the `diffusion.py` script which generates an image
 func createImage(sc *slack.Client, req request) error {
 	log.Printf("%s generating image\n", req.id)
 	err := updateMessage(sc, req.GetChannelId(), req.GetTimestamp(), "_Generating..._")
@@ -159,6 +165,7 @@ func createImage(sc *slack.Client, req request) error {
 	return nil
 }
 
+// processImage uploads image and sends image to slack
 func processImage(sc *slack.Client, req request) error {
 	log.Printf("%s uploading image\n", req.id)
 	err := updateMessage(sc, req.GetChannelId(), req.GetTimestamp(), "_Loading..._")
@@ -223,6 +230,7 @@ func processImage(sc *slack.Client, req request) error {
 	return nil
 }
 
+// updateMessage is utility func to change text of placeholder message
 func updateMessage(sc *slack.Client, channel string, timestamp string, markdown string) error {
 	opts := []slack.MsgOption{
 		slack.MsgOptionBlocks(
@@ -241,10 +249,13 @@ var (
 	errResponse = "Oh no! Something went wrong, give <@UU3TUL99S> a shout, hopefully he can get it working for you!"
 )
 
+// updateMessageError sets the placeholder message to generic error
 func updateMessageError(sc *slack.Client, channel string, timestamp string) error {
 	return updateMessage(sc, channel, timestamp, errResponse)
 }
 
+// handleError attempts to print error if exists and set placeholder message to
+// generic error message, returns bool if error is not nil
 func handleError(sc *slack.Client, err error, channel string, timestamp string) bool {
 	if err != nil {
 		log.Print(err.Error())

@@ -43,9 +43,11 @@ var (
 	dsc = new(datastoreClient)
 )
 
+// init sets up the Cloud Function endpoints, and sets up clients in a
+// non-blocking manner
 func init() {
-	functions.HTTP("DiffusionRequest", requestFunc)
-	functions.HTTP("DiffusionRedirect", redirectFunc)
+	functions.HTTP("DiffusionRequest", SlashFunction)
+	functions.HTTP("DiffusionRedirect", AuthenticationFunction)
 
 	psc.Add(1)
 	dsc.Add(1)
@@ -69,7 +71,8 @@ func init() {
 	}()
 }
 
-func requestFunc(w http.ResponseWriter, r *http.Request) {
+// SlashFunction is the base handler for slash commands, will send back the
+func SlashFunction(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	verifier, err := slack.NewSecretsVerifier(r.Header, slackSigningSecret)
@@ -113,6 +116,8 @@ func requestFunc(w http.ResponseWriter, r *http.Request) {
 			),
 		),
 	}
+
+	// send back the users command as a message, allowing later messages to be sent before the http call returns
 	_, _, _, err = sc.SendMessage(s.ChannelID, opts...)
 	if handleErrorPost(err, s.ResponseURL) {
 		return
@@ -121,6 +126,7 @@ func requestFunc(w http.ResponseWriter, r *http.Request) {
 	handleRequestSlash(sc, s)
 }
 
+// handleRequestSlash routes the slash command to the relevant function
 func handleRequestSlash(sc *slack.Client, s slack.SlashCommand) {
 	switch s.Command {
 	case "/diffusion":
@@ -136,6 +142,7 @@ type AuthedUser struct {
 	Token  string
 }
 
+// userAuthed checks a user has a token stored in datastore
 func userAuthed(userID string) bool {
 	user := new(AuthedUser)
 	key := datastore.NameKey("UserToken", userID, nil)
@@ -148,6 +155,8 @@ func userAuthed(userID string) bool {
 	return user.Token != ""
 }
 
+// getSlackClient will return a slack client using the token for the user stored
+// in datastore
 func getSlackClient(userID string) (*slack.Client, error) {
 	user := new(AuthedUser)
 	key := datastore.NameKey("UserToken", userID, nil)
@@ -160,6 +169,8 @@ func getSlackClient(userID string) (*slack.Client, error) {
 	return client, nil
 }
 
+// sendMessage creates a placeholder message used for status updates and the
+// eventual image, and publishes the image request to pubsub
 func sendMessage(sc *slack.Client, s slack.SlashCommand) {
 	opts := []slack.MsgOption{
 		slack.MsgOptionBlocks(
@@ -225,6 +236,8 @@ func updateMessageError(client *slack.Client, channel string, timestamp string) 
 	return err
 }
 
+// handleError will attempt to log an error if exists and write `errMessage` to
+// http response, returns bool if error not nil
 func handleError(err error, w http.ResponseWriter) bool {
 	if err != nil {
 		log.Print(err.Error())
@@ -237,6 +250,8 @@ func handleError(err error, w http.ResponseWriter) bool {
 	return false
 }
 
+// handleErrorPost will attempt to log an error if exists and post `errMessage`
+// to response URL, returns bool if error not nil
 func handleErrorPost(err error, responseUrl string) bool {
 	if err != nil {
 		log.Print(err.Error())
@@ -250,7 +265,9 @@ func handleErrorPost(err error, responseUrl string) bool {
 	return false
 }
 
-func redirectFunc(w http.ResponseWriter, r *http.Request) {
+// AuthenticationFunction will handle the oauth2 redirect call for user auth,
+// swapping code for token and storing in datastore
+func AuthenticationFunction(w http.ResponseWriter, r *http.Request) {
 	values := r.URL.Query()
 	code := values.Get("code")
 	if code == "" {
