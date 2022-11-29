@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -155,10 +156,15 @@ func createImage(sc *slack.Client, req request) error {
 		return err
 	}
 
+	buf := &bytes.Buffer{}
+
 	args := []string{"--token", huggingfaceToken, "--uuid", req.id, "--W", imageWidth, "--H", imageHeight, "--prompt", req.GetPrompt()}
 	cmd := exec.Command("./diffusion.py", args...)
+	cmd.Stdout = buf
+	cmd.Stderr = buf
 	err = cmd.Run()
 	if err != nil {
+		log.Print(buf.String())
 		return err
 	}
 
