@@ -135,7 +135,7 @@ def main():
         "--model",
         type=str,
         nargs="?",
-        default="CompVis/stable-diffusion-v1-4",
+        default="runwayml/stable-diffusion-v1-5",
         help="The model used to render images",
     )
     parser.add_argument(
