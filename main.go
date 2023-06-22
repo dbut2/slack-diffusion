@@ -1,22 +1,20 @@
 package main
 
 import (
+	"net/http"
 	"os"
-
-	"github.com/gin-gonic/gin"
 )
 
 func main() {
-	e := gin.New()
-
-	e.GET("/Generate", SlashFunction)
+	router := http.NewServeMux()
+	router.HandleFunc("/generate", SlashFunction)
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	err := e.Run(":" + port)
+	err := http.ListenAndServe(":"+port, router)
 	if err != nil {
 		panic(err.Error())
 	}

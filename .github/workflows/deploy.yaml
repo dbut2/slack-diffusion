@@ -27,9 +27,9 @@ jobs:
 
       - name: Build and Push
         run: |
-          docker build .f Dockerfile -t gcr.io/slack-diffusion/slack-diffusion
-          docker tag gcr.io/slack-diffusion/slack-diffusion:latest
-          docker tag gcr.io/slack-diffusion/slack-diffusion:${{ github.sha }}
+          docker build -f Dockerfile -t gcr.io/slack-diffusion/slack-diffusion .
+          docker tag gcr.io/slack-diffusion/slack-diffusion gcr.io/slack-diffusion/slack-diffusion:latest
+          docker tag gcr.io/slack-diffusion/slack-diffusion gcr.io/slack-diffusion/slack-diffusion:${{ github.sha }}
           docker push gcr.io/slack-diffusion/slack-diffusion
           docker push gcr.io/slack-diffusion/slack-diffusion:latest
           docker push gcr.io/slack-diffusion/slack-diffusion:${{ github.sha }}
@@ -39,9 +39,17 @@ jobs:
         with:
           project_id: slack-diffusion
           region: australia-southeast2
+          env_vars: |
+            PROJECT_ID=slack-diffusion
+            STORAGE_BUCKET=slack-diffusion-images
+            API_HOST="https://api.stability.ai"
+            IMAGE_HEIGHT=640
+            IMAGE_WIDTH=640
           secrets: |
-            DATABASE=database-config:latest
-            DATASTORE=datastore-config:latest
-            REDIS=redis-config:latest
+            SLACK_CLIENT_ID=SLACK_CLIENT_ID:latest
+            SLACK_CLIENT_SECRET=SLACK_CLIENT_SECRET:latest
+            SLACK_SIGNING_SECRET=SLACK_SIGNING_SECRET:latest
+            SLACK_TOKEN=SLACK_TOKEN:latest
+            STABILITY_API_KEY=STABILITY_API_KEY:latest
           service: slack-diffusion
           image: gcr.io/slack-diffusion/slack-diffusion:${{ github.sha }}

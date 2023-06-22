@@ -12,24 +12,16 @@ import (
 	"sync"
 
 	"cloud.google.com/go/datastore"
-	"cloud.google.com/go/pubsub"
 	"cloud.google.com/go/storage"
-	"github.com/gin-gonic/gin"
 	"github.com/slack-go/slack"
 )
 
 var (
 	projectID          = os.Getenv("PROJECT_ID")
-	pubsubTopic        = os.Getenv("PUBSUB_TOPIC")
 	slackClientID      = os.Getenv("SLACK_CLIENT_ID")
 	slackClientSecret  = os.Getenv("SLACK_CLIENT_SECRET")
 	slackSigningSecret = os.Getenv("SLACK_SIGNING_SECRET")
 )
-
-type pubsubClient struct {
-	*pubsub.Client
-	sync.WaitGroup
-}
 
 type datastoreClient struct {
 	*datastore.Client
@@ -42,7 +34,6 @@ type storageClient struct {
 }
 
 var (
-	psc = new(pubsubClient)
 	dsc = new(datastoreClient)
 	gcs = new(storageClient)
 )
@@ -50,18 +41,8 @@ var (
 // init sets up the Cloud Function endpoints, and sets up clients in a
 // non-blocking manner
 func init() {
-	psc.Add(1)
 	dsc.Add(1)
 	gcs.Add(1)
-
-	go func() {
-		client, err := pubsub.NewClient(context.Background(), projectID)
-		if err != nil {
-			log.Fatal(err.Error())
-		}
-		psc.Client = client
-		psc.Done()
-	}()
 
 	go func() {
 		client, err := datastore.NewClient(context.Background(), projectID)
@@ -83,20 +64,20 @@ func init() {
 }
 
 // SlashFunction is the base handler for slash commands, will send back the
-func SlashFunction(c *gin.Context) {
-	verifier, err := slack.NewSecretsVerifier(c.Request.Header, slackSigningSecret)
-	if handleError(err, c) {
+func SlashFunction(w http.ResponseWriter, r *http.Request) {
+	verifier, err := slack.NewSecretsVerifier(r.Header, slackSigningSecret)
+	if handleError(err, w) {
 		return
 	}
 
-	c.Request.Body = io.NopCloser(io.TeeReader(c.Request.Body, &verifier))
-	s, err := slack.SlashCommandParse(c.Request)
-	if handleError(err, c) {
+	r.Body = io.NopCloser(io.TeeReader(r.Body, &verifier))
+	s, err := slack.SlashCommandParse(r)
+	if handleError(err, w) {
 		return
 	}
 
 	err = verifier.Ensure()
-	if handleError(err, c) {
+	if handleError(err, w) {
 		return
 	}
 
@@ -105,7 +86,10 @@ func SlashFunction(c *gin.Context) {
 		userScopes := []string{"chat:write", "users:read"}
 		authURL := fmt.Sprintf("https://slack.com/oauth/v2/authorize?client_id=%s&scope=%s&user_scope=%s", slackClientID, strings.Join(botScopes, ","), strings.Join(userScopes, ","))
 		resp := "Oh no! It looks like you're not yet authorized, please follow the link below and try again!\n" + authURL
-		c.String(http.StatusUnauthorized, resp)
+		_, err = w.Write([]byte(resp))
+		if handleError(err, w) {
+			return
+		}
 		return
 	}
 
@@ -235,10 +219,13 @@ func updateMessageError(client *slack.Client, channel string, timestamp string) 
 
 // handleError will attempt to log an error if exists and write `errMessage` to
 // http response, returns bool if error not nil
-func handleError(err error, c *gin.Context) bool {
+func handleError(err error, w http.ResponseWriter) bool {
 	if err != nil {
 		log.Print(err.Error())
-		c.String(http.StatusInternalServerError, errResponse)
+		_, err = w.Write([]byte(errResponse))
+		if err != nil {
+			log.Print(err.Error())
+		}
 		return true
 	}
 	return false
