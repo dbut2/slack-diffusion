@@ -1,5 +1,4 @@
-// Package p contains a Pub/Sub Cloud Function.
-package p
+package main
 
 import (
 	"bytes"
@@ -11,14 +10,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
+	"strconv"
 
-	"cloud.google.com/go/datastore"
 	"cloud.google.com/go/storage"
 	"github.com/google/uuid"
 	"github.com/slack-go/slack"
-	"google.golang.org/protobuf/proto"
-
-	"github.com/dbut2/slack-diffusion/proto/pkg"
 )
 
 // PubSubMessage is the payload of a Pub/Sub event. Please refer to the docs for
@@ -27,90 +24,93 @@ type PubSubMessage struct {
 	Data []byte `json:"data"`
 }
 
-func GenerateFromPubSub(ctx context.Context, m PubSubMessage) error {
+func GenerateFromPubSub(req Request) error {
 	projectID := os.Getenv("PROJECT_ID")
 	if projectID == "" {
 		return errors.New("PROJECT_ID is blank")
 	}
 
-	dsc, err := datastore.NewClient(ctx, projectID)
-	if err != nil {
-		return err
-	}
-
-	gcsc, err := storage.NewClient(ctx)
-	if err != nil {
-		return err
-	}
-
 	id := uuid.New()
 
-	req := new(pkg.Request)
-	err = proto.Unmarshal(m.Data, req)
+	sc, err := getSlackClient(req.UserId)
 	if err != nil {
 		return err
 	}
 
-	sc, err := getSlackClient(dsc, req.GetUserId())
+	log.Printf("%s msg received from %s: %s", id, getName(sc, req.UserId), req.Prompt)
+
+	prompt, count, err := parsePrompt(req.Prompt)
 	if err != nil {
 		return err
 	}
 
-	log.Printf("%s msg received from %s: %s\n", id, getName(sc, req.GetUserId()), req.GetPrompt())
+	if count < 1 {
+		count = 1
+	}
 
-	err = updateMessage(sc, req.GetChannelId(), req.GetTimestamp(), "_Generating..._")
+	maxImages := 4
+	if count > maxImages {
+		log.Printf("%s too many images requested: %d", id, count)
+		count = maxImages
+	}
+
+	err = updateMessage(sc, req.ChannelId, req.Timestamp, "_Generating..._")
 	if err != nil {
 		return err
 	}
 
-	images, err := callApi(req.GetPrompt())
+	images, err := callApi(prompt, count)
 	if err != nil {
-		updateMessageError(sc, req.GetChannelId(), req.GetTimestamp())
+		updateMessageError(sc, req.ChannelId, req.Timestamp)
 		return err
 	}
 
-	err = updateMessage(sc, req.GetChannelId(), req.GetTimestamp(), "_Loading..._")
+	err = updateMessage(sc, req.ChannelId, req.Timestamp, "_Loading..._")
 	if err != nil {
+		updateMessageError(sc, req.ChannelId, req.Timestamp)
 		return err
 	}
 
 	bucket := os.Getenv("STORAGE_BUCKET")
-	imageUrls, err := writeBytes(gcsc, bucket, id.String(), images)
+	imageUrls, err := writeBytes(gcs.Client, bucket, id.String(), images)
 	if err != nil {
-		updateMessageError(sc, req.GetChannelId(), req.GetTimestamp())
+		updateMessageError(sc, req.ChannelId, req.Timestamp)
 		return err
 	}
 
-	opts := []slack.MsgOption{
-		slack.MsgOptionBlocks(
-			slack.NewImageBlock(imageUrls[0], req.GetPrompt(), "blockID", slack.NewTextBlockObject("plain_text", req.GetPrompt(), false, false)),
-		),
+	var blocks []slack.Block
+	for i, image := range imageUrls {
+		blocks = append(blocks, slack.NewImageBlock(image, prompt, fmt.Sprintf("image_%d", i), slack.NewTextBlockObject("plain_text", prompt, false, false)))
 	}
 
-	_, _, _, err = sc.UpdateMessage(req.GetChannelId(), req.GetTimestamp(), opts...)
+	_, _, _, err = sc.UpdateMessage(req.ChannelId, req.Timestamp, slack.MsgOptionBlocks(blocks...))
 	if err != nil {
+		updateMessageError(sc, req.ChannelId, req.Timestamp)
 		return err
 	}
 
 	return nil
 }
 
-type AuthedUser struct {
-	UserID string
-	Token  string
-}
+func parsePrompt(prompt string) (string, int, error) {
+	var p string
+	var c int
 
-// getSlackClient will return a slack client using the token for the user stored
-// in datastore
-func getSlackClient(dsc *datastore.Client, userID string) (*slack.Client, error) {
-	user := new(AuthedUser)
-	key := datastore.NameKey("UserToken", userID, nil)
-	err := dsc.Get(context.Background(), key, user)
-	if err != nil {
-		return nil, err
+	r := regexp.MustCompile("^(x(\\d*) )?(.*)$")
+	res := r.FindAllStringSubmatch(prompt, -1)
+
+	var err error
+
+	if str := res[0][2]; str != "" {
+		c, err = strconv.Atoi(res[0][2])
+		if err != nil {
+			return "", 0, err
+		}
 	}
-	client := slack.New(user.Token)
-	return client, nil
+
+	p = res[0][3]
+
+	return p, c, nil
 }
 
 // getName will fetch the users name from slack
@@ -138,15 +138,6 @@ func updateMessage(sc *slack.Client, channel string, timestamp string, markdown 
 	return err
 }
 
-var (
-	errResponse = "Oh no! Something went wrong, give <@UU3TUL99S> a shout, hopefully he can get it working for you!"
-)
-
-// updateMessageError sets the placeholder message to generic error
-func updateMessageError(sc *slack.Client, channel string, timestamp string) error {
-	return updateMessage(sc, channel, timestamp, errResponse)
-}
-
 type TextToImageImage struct {
 	Base64       string `json:"base64"`
 	Seed         uint32 `json:"seed"`
@@ -157,7 +148,7 @@ type TextToImageResponse struct {
 	Images []TextToImageImage `json:"artifacts"`
 }
 
-func callApi(prompt string) ([][]byte, error) {
+func callApi(prompt string, count int) ([][]byte, error) {
 	engineId := "stable-diffusion-512-v2-0"
 	apiHost := os.Getenv("STABILITY_API_HOST")
 	if apiHost == "" {
@@ -184,9 +175,9 @@ func callApi(prompt string) ([][]byte, error) {
 		"clip_guidance_preset": "FAST_BLUE",
 		"height": %s,
 		"width": %s,
-		"samples": 1,
+		"samples": %d,
 		"steps": 50
-  	}`, prompt, height, width))
+  	}`, prompt, height, width, count))
 
 	req, _ := http.NewRequest("POST", reqUrl, bytes.NewBuffer(data))
 	req.Header.Add("Content-Type", "application/json")
