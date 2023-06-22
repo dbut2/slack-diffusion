@@ -41,6 +41,7 @@ jobs:
           region: australia-southeast2
           env_vars: |
             PROJECT_ID=slack-diffusion
+            STORAGE_BUCKET=slack-diffusion-images
             API_HOST="https://api.stability.ai"
             IMAGE_HEIGHT=640
             IMAGE_WIDTH=640
