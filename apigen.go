@@ -186,6 +186,8 @@ func callApi(prompt string, count int) ([][]byte, error) {
 		return nil, err
 	}
 
+	log.Print(res)
+
 	if res.StatusCode != 200 {
 		var body map[string]interface{}
 		buf := &bytes.Buffer{}
@@ -194,7 +196,7 @@ func callApi(prompt string, count int) ([][]byte, error) {
 		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
 			return nil, err
 		}
-		return nil, errors.New(fmt.Sprintf("status != 200: %s", body))
+		return nil, errors.New(fmt.Sprintf("status != 200: %d, %s", res.StatusCode, body))
 	}
 
 	var body TextToImageResponse
