@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -186,14 +185,8 @@ func callApi(prompt string, count int) ([][]byte, error) {
 		return nil, err
 	}
 
-	log.Print(req)
-	log.Print(res)
-
 	if res.StatusCode != 200 {
 		var body map[string]interface{}
-		buf := &bytes.Buffer{}
-		res.Body = io.NopCloser(io.TeeReader(res.Body, buf))
-		log.Print(buf.String())
 		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
 			return nil, err
 		}
