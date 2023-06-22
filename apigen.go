@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -17,12 +18,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/slack-go/slack"
 )
-
-// PubSubMessage is the payload of a Pub/Sub event. Please refer to the docs for
-// additional information regarding Pub/Sub events.
-type PubSubMessage struct {
-	Data []byte `json:"data"`
-}
 
 func GenerateFromPubSub(req Request) error {
 	projectID := os.Getenv("PROJECT_ID")
@@ -193,6 +188,9 @@ func callApi(prompt string, count int) ([][]byte, error) {
 
 	if res.StatusCode != 200 {
 		var body map[string]interface{}
+		buf := &bytes.Buffer{}
+		res.Body = io.NopCloser(io.TeeReader(res.Body, buf))
+		log.Print(buf.String())
 		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
 			return nil, err
 		}
