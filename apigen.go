@@ -186,6 +186,7 @@ func callApi(prompt string, count int) ([][]byte, error) {
 		return nil, err
 	}
 
+	log.Print(req)
 	log.Print(res)
 
 	if res.StatusCode != 200 {
