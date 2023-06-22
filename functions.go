@@ -1,4 +1,4 @@
-package functions
+package main
 
 import (
 	"bytes"
@@ -13,11 +13,9 @@ import (
 
 	"cloud.google.com/go/datastore"
 	"cloud.google.com/go/pubsub"
-	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
+	"cloud.google.com/go/storage"
+	"github.com/gin-gonic/gin"
 	"github.com/slack-go/slack"
-	"google.golang.org/protobuf/proto"
-
-	"github.com/dbut2/slack-diffusion/proto/pkg"
 )
 
 var (
@@ -38,19 +36,23 @@ type datastoreClient struct {
 	sync.WaitGroup
 }
 
+type storageClient struct {
+	*storage.Client
+	sync.WaitGroup
+}
+
 var (
 	psc = new(pubsubClient)
 	dsc = new(datastoreClient)
+	gcs = new(storageClient)
 )
 
 // init sets up the Cloud Function endpoints, and sets up clients in a
 // non-blocking manner
 func init() {
-	functions.HTTP("DiffusionRequest", SlashFunction)
-	functions.HTTP("DiffusionRedirect", AuthenticationFunction)
-
 	psc.Add(1)
 	dsc.Add(1)
+	gcs.Add(1)
 
 	go func() {
 		client, err := pubsub.NewClient(context.Background(), projectID)
@@ -69,25 +71,32 @@ func init() {
 		dsc.Client = client
 		dsc.Done()
 	}()
+
+	go func() {
+		client, err := storage.NewClient(context.Background())
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		gcs.Client = client
+		gcs.Done()
+	}()
 }
 
 // SlashFunction is the base handler for slash commands, will send back the
-func SlashFunction(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-
-	verifier, err := slack.NewSecretsVerifier(r.Header, slackSigningSecret)
-	if handleError(err, w) {
+func SlashFunction(c *gin.Context) {
+	verifier, err := slack.NewSecretsVerifier(c.Request.Header, slackSigningSecret)
+	if handleError(err, c) {
 		return
 	}
 
-	r.Body = io.NopCloser(io.TeeReader(r.Body, &verifier))
-	s, err := slack.SlashCommandParse(r)
-	if handleError(err, w) {
+	c.Request.Body = io.NopCloser(io.TeeReader(c.Request.Body, &verifier))
+	s, err := slack.SlashCommandParse(c.Request)
+	if handleError(err, c) {
 		return
 	}
 
 	err = verifier.Ensure()
-	if handleError(err, w) {
+	if handleError(err, c) {
 		return
 	}
 
@@ -96,34 +105,33 @@ func SlashFunction(w http.ResponseWriter, r *http.Request) {
 		userScopes := []string{"chat:write", "users:read"}
 		authURL := fmt.Sprintf("https://slack.com/oauth/v2/authorize?client_id=%s&scope=%s&user_scope=%s", slackClientID, strings.Join(botScopes, ","), strings.Join(userScopes, ","))
 		resp := "Oh no! It looks like you're not yet authorized, please follow the link below and try again!\n" + authURL
-		_, err = w.Write([]byte(resp))
-		if handleError(err, w) {
+		c.String(http.StatusUnauthorized, resp)
+		return
+	}
+
+	go func() {
+		sc, err := getSlackClient(s.UserID)
+		if handleErrorPost(err, s.ResponseURL) {
 			return
 		}
-		return
-	}
 
-	sc, err := getSlackClient(s.UserID)
-	if handleErrorPost(err, s.ResponseURL) {
-		return
-	}
-
-	opts := []slack.MsgOption{
-		slack.MsgOptionBlocks(
-			slack.NewSectionBlock(
-				slack.NewTextBlockObject("plain_text", s.Command+" "+s.Text, false, false),
-				nil, nil,
+		opts := []slack.MsgOption{
+			slack.MsgOptionBlocks(
+				slack.NewSectionBlock(
+					slack.NewTextBlockObject("plain_text", s.Command+" "+s.Text, false, false),
+					nil, nil,
+				),
 			),
-		),
-	}
+		}
 
-	// send back the users command as a message, allowing later messages to be sent before the http call returns
-	_, _, _, err = sc.SendMessage(s.ChannelID, opts...)
-	if handleErrorPost(err, s.ResponseURL) {
-		return
-	}
+		// send back the users command as a message, allowing later messages to be sent before the http call returns
+		_, _, _, err = sc.SendMessage(s.ChannelID, opts...)
+		if handleErrorPost(err, s.ResponseURL) {
+			return
+		}
 
-	handleRequestSlash(sc, s)
+		handleRequestSlash(sc, s)
+	}()
 }
 
 // handleRequestSlash routes the slash command to the relevant function
@@ -169,6 +177,13 @@ func getSlackClient(userID string) (*slack.Client, error) {
 	return client, nil
 }
 
+type Request struct {
+	Prompt    string
+	ChannelId string
+	Timestamp string
+	UserId    string
+}
+
 // sendMessage creates a placeholder message used for status updates and the
 // eventual image, and publishes the image request to pubsub
 func sendMessage(sc *slack.Client, s slack.SlashCommand) {
@@ -186,34 +201,16 @@ func sendMessage(sc *slack.Client, s slack.SlashCommand) {
 		return
 	}
 
-	req := &pkg.Request{
+	req := Request{
 		Prompt:    s.Text,
 		ChannelId: channel,
 		Timestamp: timestamp,
 		UserId:    s.UserID,
 	}
-	b, err := proto.Marshal(req)
-	if err != nil {
-		log.Print(err.Error())
-		err = updateMessageError(sc, channel, timestamp)
-		if err != nil {
-			log.Print(err.Error())
-		}
-		return
-	}
-	msg := &pubsub.Message{
-		Data: b,
-	}
 
-	psc.Wait()
-	res := psc.Topic(pubsubTopic).Publish(context.Background(), msg)
-	_, err = res.Get(context.Background())
+	err = GenerateFromPubSub(req)
 	if err != nil {
 		log.Print(err.Error())
-		err = updateMessageError(sc, channel, timestamp)
-		if err != nil {
-			log.Print(err.Error())
-		}
 		return
 	}
 }
@@ -238,13 +235,10 @@ func updateMessageError(client *slack.Client, channel string, timestamp string) 
 
 // handleError will attempt to log an error if exists and write `errMessage` to
 // http response, returns bool if error not nil
-func handleError(err error, w http.ResponseWriter) bool {
+func handleError(err error, c *gin.Context) bool {
 	if err != nil {
 		log.Print(err.Error())
-		_, err = w.Write([]byte(errResponse))
-		if err != nil {
-			log.Print(err.Error())
-		}
+		c.String(http.StatusInternalServerError, errResponse)
 		return true
 	}
 	return false
