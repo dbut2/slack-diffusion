@@ -27,7 +27,7 @@ jobs:
 
       - name: Build and Push
         run: |
-          docker build -f Dockerfile -t gcr.io/slack-diffusion/slack-diffusion
+          docker build -f Dockerfile -t gcr.io/slack-diffusion/slack-diffusion .
           docker tag gcr.io/slack-diffusion/slack-diffusion:latest
           docker tag gcr.io/slack-diffusion/slack-diffusion:${{ github.sha }}
           docker push gcr.io/slack-diffusion/slack-diffusion
