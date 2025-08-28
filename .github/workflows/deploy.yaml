@@ -35,7 +35,7 @@ jobs:
           docker push gcr.io/slack-diffusion/slack-diffusion:${{ github.sha }}
 
       - name: Deploy
-        uses: "google-github-actions/deploy-cloudrun@v1"
+        uses: "google-github-actions/deploy-cloudrun@v2"
         with:
           project_id: slack-diffusion
           region: australia-southeast2
