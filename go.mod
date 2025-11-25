@@ -3,7 +3,7 @@ module github.com/dbut2/slack-diffusion
 go 1.25.0
 
 require (
-	cloud.google.com/go/datastore v1.20.0
+	cloud.google.com/go/datastore v1.21.0
 	cloud.google.com/go/storage v1.57.2
 	github.com/google/uuid v1.6.0
 	github.com/slack-go/slack v0.17.3
